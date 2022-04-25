@@ -1,0 +1,40 @@
+<html>
+  <head>
+    <title>Tag</title>
+    <style>
+      canvas {
+        display: block;
+        margin: auto;
+        margin-top: 5vh;
+        width: 1000px;
+        height: 500px;
+        border: 5px solid black;
+      }
+      #left, #right {
+      	position: fixed;
+      	bottom: 0;
+      	top: 0;
+      	height: 100%;
+      	width: 50%;
+      	z-index: -1;
+      }
+
+      #left {
+      	left: 0;
+      	background-color: red;
+      }
+
+      #right {
+      	right: 0;
+      	background-color: green;
+      }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <div id="left"></div>
+    <div id="right"></div>
+    <canvas id="canvas"></canvas>
+  </body>
+  <script src="/static/game.js"></script>
+</html>
