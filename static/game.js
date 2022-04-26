@@ -1,3 +1,8 @@
+const playerSize = 30;
+const platformWidth = 300;
+const platformHeight = 5;
+const powerUpSize = 20;
+
 var socket = io();
 
 var movement = {
@@ -6,6 +11,7 @@ var movement = {
   left: false,
   right: false
 }
+
 document.addEventListener('keydown', function(event) {
   switch (event.keyCode) {
     case 37: // left
@@ -22,6 +28,7 @@ document.addEventListener('keydown', function(event) {
       break;
   }
 });
+
 document.addEventListener('keyup', function(event) {
   switch (event.keyCode) {
     case 37: // A
@@ -57,7 +64,12 @@ socket.on('state', function(data) {
 
   data.platformData.forEach( function (platform, i) {
     ctx.fillStyle = "black";
-    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+    ctx.fillRect(platform.x, platform.y, platformWidth, platformHeight);
+  });
+
+  data.powerUpData.forEach(function (powerUp, i) {
+    ctx.fillStyle = "orange";
+    ctx.fillRect(powerUp.x, powerUp.y, powerUpSize, powerUpSize);
   });
 
   var scorePos = 50;
@@ -65,7 +77,7 @@ socket.on('state', function(data) {
     var player = data.playerData[id];
     if (!player.dead) {
       ctx.fillStyle = player.color;
-      ctx.fillRect(player.x, player.y, 30, 30);
+      ctx.fillRect(player.x, player.y, playerSize, playerSize);
       ctx.fillStyle = "black";
   		ctx.font = "30px Arial";
   		ctx.fillText(player.num, player.x + 7, player.y + 25);
