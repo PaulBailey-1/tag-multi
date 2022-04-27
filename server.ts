@@ -10,13 +10,20 @@ let app = express();
 let server = http.Server(app);
 let io = socketIO(server);
 
-app.set('port', 5000);
+const port = parseInt(process.env.PORT) || 5000;
+
 app.use('/static', express.static(__dirname + '/static'));
 
 // Routing
 app.get('/', function (request, response) {
     response.sendFile(path.join(__dirname, 'index.html'));
 });
+
+// Starts the server.
+app.listen(port, function () {
+    console.log('Starting server on port ' + port);
+});
+
 
 interface ClientData {
     up: boolean,
@@ -76,11 +83,6 @@ function joinGame(socketId: string) {
     connections[socketId].socket.emit('new game');
     connections[socketId].socket.join(String(gameId));
 }
-
-// Starts the server.
-server.listen(5000, function () {
-    console.log('Starting server on port 5000');
-});
 
 io.on('connection', function (socket: Socket) {
     socket.on('new player', function () {

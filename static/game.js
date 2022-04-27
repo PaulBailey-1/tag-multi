@@ -3,7 +3,7 @@ const platformWidth = 300;
 const platformHeight = 5;
 const powerUpSize = 20;
 
-var socket = io();
+// var socket = io();
 
 let canStart = false;
 let dead = false;

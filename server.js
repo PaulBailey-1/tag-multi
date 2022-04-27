@@ -24,11 +24,15 @@ var _ = require('lodash');
 var app = express();
 var server = http.Server(app);
 var io = socketIO(server);
-app.set('port', 5000);
+var port = parseInt(process.env.PORT) || 5000;
 app.use('/static', express.static(__dirname + '/static'));
 // Routing
 app.get('/', function (request, response) {
     response.sendFile(path.join(__dirname, 'index.html'));
+});
+// Starts the server.
+app.listen(port, function () {
+    console.log('Starting server on port ' + port);
 });
 var width = 1000;
 var height = 500;
@@ -69,10 +73,6 @@ function joinGame(socketId) {
     connections[socketId].socket.emit('new game');
     connections[socketId].socket.join(String(gameId));
 }
-// Starts the server.
-server.listen(5000, function () {
-    console.log('Starting server on port 5000');
-});
 io.on('connection', function (socket) {
     socket.on('new player', function () {
         connections[socket.id] = {
