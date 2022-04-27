@@ -36,55 +36,97 @@ var playerXSpeed = 8;
 var playerYSpeed = 10;
 var gravity = 0.4;
 var initScore = 60;
-var powerUpTime = 10;
-var powerUpValue = 10;
+var powerUpTime = 25;
+var powerUpValue = 5;
 var playerSize = 30;
 var platformWidth = 300;
 var platformHeight = 5;
 var powerUpSize = 20;
 var platforms = [];
-var sockets = [];
+var games = [];
+var connections = [];
+function joinGame(socketId) {
+    if (games[connections[socketId].game] !== undefined && games[connections[socketId].game].players[socketId] !== undefined) {
+        games[connections[socketId].game].removePlayer(socketId);
+    }
+    var gameId = -1;
+    var highestPlayerCount = 0;
+    for (var i in games) {
+        if (!games[i].running) {
+            if (games[i].playerCount > highestPlayerCount) {
+                gameId = games[i].id;
+                highestPlayerCount = games[i].playerCount;
+            }
+        }
+    }
+    if (gameId === -1) {
+        gameId = games.length;
+        games.push(new Game(games.length));
+        games[gameId].run();
+    }
+    connections[socketId].game = gameId;
+    games[gameId].addPlayer(socketId);
+    connections[socketId].socket.emit('new game');
+    connections[socketId].socket.join(String(gameId));
+}
 // Starts the server.
 server.listen(5000, function () {
     console.log('Starting server on port 5000');
 });
 io.on('connection', function (socket) {
     socket.on('new player', function () {
-        sockets[socket.id] = game;
-        game.addPlayer(socket.id);
+        connections[socket.id] = {
+            socket: socket
+        };
+        joinGame(socket.id);
+        console.log('Player connected');
+    });
+    socket.on('start', function () {
+        games[connections[socket.id].game].startGame();
+    });
+    socket.on('join', function () {
+        socket.leave(String(connections[socket.id].game));
+        joinGame(socket.id);
     });
     socket.on('movement', function (data) {
-        if (sockets[socket.id] !== undefined) {
-            sockets[socket.id].movePlayer(socket.id, data);
+        if (connections[socket.id] !== undefined) {
+            games[connections[socket.id].game].movePlayer(socket.id, data);
         }
     });
     socket.on('disconnect', function () {
-        if (sockets[socket.id] !== undefined) {
-            sockets[socket.id].removePlayer(socket.id);
+        if (connections[socket.id] !== undefined) {
+            games[connections[socket.id].game].removePlayer(socket.id);
+            console.log('Player Disconnected');
         }
     });
 });
 var Game = /** @class */ (function () {
-    function Game() {
+    function Game(id) {
         this.players = [];
         this.powerUps = [];
+        this.id = id;
+        this.running = false;
         this.playerCount = 0;
         this.lastScoreTime = 0.0;
         this.powerUpCounter = powerUpTime;
     }
     Game.prototype.addPlayer = function (id) {
         this.playerCount++;
-        this.players[id] = new Player(this.playerCount);
-        console.log('Player Added');
+        var highest = 0;
+        for (var id_1 in this.players) {
+            if (this.players[id_1].num > highest) {
+                highest = this.players[id_1].num;
+            }
+        }
+        this.players[id] = new Player(highest + 1, id);
     };
     Game.prototype.removePlayer = function (id) {
-        if (this.players[id].status) {
+        if (this.players[id] != undefined && this.players[id].status) {
             this.players[id].dead = true;
             this.updateTagger();
         }
         delete this.players[id];
         this.playerCount--;
-        console.log('Player Disconnected');
     };
     Game.prototype.movePlayer = function (id, data) {
         var player = this.players[id];
@@ -93,10 +135,11 @@ var Game = /** @class */ (function () {
         }
     };
     Game.prototype.run = function () {
+        var _this = this;
         this.lastScoreTime = (new Date()).getTime();
         setInterval(function (game) {
             game.update();
-            io.sockets.emit('state', game.getData());
+            io.to(String(_this.id)).emit('state', game.getData());
         }, 1000 / 60, this);
     };
     Game.prototype.getData = function () {
@@ -144,66 +187,78 @@ var Game = /** @class */ (function () {
             this.restart();
         }
     };
+    Game.prototype.startGame = function () {
+        this.running = true;
+        this.updateTagger();
+    };
     Game.prototype.update = function () {
         for (var id in this.players) {
             this.players[id].update();
         }
-        for (var i in this.powerUps) {
-            this.powerUps[i].update();
-            if (this.powerUps[i].y >= height) {
-                this.powerUps.splice(Number(i), 1);
+        if (this.running) {
+            for (var i in this.powerUps) {
+                this.powerUps[i].update();
+                if (this.powerUps[i].y >= height) {
+                    this.powerUps.splice(Number(i), 1);
+                }
             }
-        }
-        // Tag check
-        for (var firstId in this.players) {
-            for (var secondId in this.players) {
-                if (firstId != secondId) {
-                    var player1 = this.players[firstId];
-                    var player2 = this.players[secondId];
-                    if (player1.dead || player2.dead) {
-                        continue;
+            // Tag check
+            for (var firstId in this.players) {
+                for (var secondId in this.players) {
+                    if (firstId != secondId) {
+                        var player1 = this.players[firstId];
+                        var player2 = this.players[secondId];
+                        if (player1.dead || player2.dead) {
+                            continue;
+                        }
+                        player1.tag(player2);
                     }
-                    player1.tag(player2);
                 }
             }
-        }
-        // Powerup check
-        for (var i in this.players) {
-            for (var j in this.powerUps) {
-                if (this.players[i].collide(this.powerUps[j])) {
-                    this.players[i].score += powerUpValue;
-                    this.powerUps.splice(Number(j), 1);
+            // Powerup check
+            for (var i in this.players) {
+                for (var j in this.powerUps) {
+                    if (!this.players[i].dead && this.players[i].collide(this.powerUps[j])) {
+                        this.players[i].score += powerUpValue;
+                        this.powerUps.splice(Number(j), 1);
+                    }
                 }
             }
-        }
-        // Scoring
-        var currentTime = (new Date()).getTime();
-        var timeDifference = currentTime - this.lastScoreTime;
-        if (timeDifference >= 1000) {
-            for (var id in this.players) {
-                var player = this.players[id];
-                if (player.scoring(this.playerCount)) {
-                    this.updateTagger();
+            // Scoring
+            var currentTime = (new Date()).getTime();
+            var timeDifference = currentTime - this.lastScoreTime;
+            if (timeDifference >= 1000) {
+                for (var id in this.players) {
+                    var player = this.players[id];
+                    if (player.scoring(this.playerCount)) {
+                        this.updateTagger();
+                    }
                 }
+                // Power ups
+                this.powerUpCounter--;
+                if (_.random(0, this.powerUpCounter) == 0) {
+                    this.powerUps.push(new PowerUp());
+                    this.powerUpCounter = powerUpTime;
+                }
+                this.lastScoreTime = currentTime;
             }
-            // Power ups
-            this.powerUpCounter--;
-            if (_.random(0, this.powerUpCounter) == 0) {
-                this.powerUps.push(new PowerUp());
-                this.powerUpCounter = powerUpTime;
-            }
-            this.lastScoreTime = currentTime;
         }
     };
     Game.prototype.restart = function () {
         var _this = this;
         setTimeout(function () {
-            for (var id2 in _this.players) {
-                _this.players[id2].dead = false;
-                _this.players[id2].win = false;
-                _this.players[id2].x = _.random(100, width - 100);
-                _this.players[id2].y = height - playerSize;
-                _this.players[id2].score = initScore;
+            var playerIds = [];
+            for (var i in _this.players) {
+                playerIds[i] = _this.players[i].id;
+            }
+            _this.running = false;
+            _this.players = [];
+            _this.playerCount = 0;
+            _this.powerUps = [];
+            _this.powerUpCounter = powerUpTime;
+            for (var id in playerIds) {
+                connections[id].socket.leave(String(_this.id));
+                joinGame(id);
             }
         }, 3000);
     };
@@ -222,8 +277,9 @@ var Graphic = /** @class */ (function () {
 }());
 var Player = /** @class */ (function (_super) {
     __extends(Player, _super);
-    function Player(num) {
+    function Player(num, id) {
         var _this = _super.call(this) || this;
+        _this.id = id;
         _this.x = _.random(100, 900),
             _this.y = 500 - playerSize;
         _this.xspeed = 0;
@@ -239,12 +295,7 @@ var Player = /** @class */ (function (_super) {
         _this.score = initScore;
         _this.dead = false;
         _this.win = false;
-        if (_this.num == 1) {
-            _this.status = true;
-        }
-        else {
-            _this.status = false;
-        }
+        _this.status = false;
         return _this;
     }
     Player.prototype.update = function () {
@@ -418,5 +469,3 @@ platforms.push(new Platform(600, 400, platformWidth, platformHeight));
 platforms.push(new Platform(350, 300, platformWidth, platformHeight));
 platforms.push(new Platform(100, 200, platformWidth, platformHeight));
 platforms.push(new Platform(600, 200, platformWidth, platformHeight));
-var game = new Game;
-game.run();

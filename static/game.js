@@ -5,6 +5,10 @@ const powerUpSize = 20;
 
 var socket = io();
 
+let canStart = false;
+let dead = false;
+let newGame = false;
+
 var movement = {
   up: false,
   down: false,
@@ -73,7 +77,9 @@ socket.on('state', function(data) {
   });
 
   var scorePos = 50;
+  let playerCount = 0;
   for (var id in data.playerData) {
+    playerCount++;
     var player = data.playerData[id];
     if (!player.dead) {
       ctx.fillStyle = player.color;
@@ -87,10 +93,38 @@ socket.on('state', function(data) {
       ctx.fillStyle = "black";
   		ctx.font = "100px Arial";
       ctx.fillText("You Lost", 300, 290);
+      if (!dead) {
+        document.getElementById('button').innerHTML = 'New game';
+        dead = true;
+      }
     } if (player.win) {
       ctx.fillStyle = "black";
   		ctx.font = "100px Arial";
       ctx.fillText(player.num + " wins!", 300, 150);
+      if (!dead) {
+        document.getElementById('button').innerHTML = 'New game';
+        dead = true;
+      }
     }
   }
+  if (playerCount > 1) {
+    canStart = true;
+    document.getElementById('button').setAttribute('style', 'background-color:blue');
+  } else {
+    canStart = false;
+    document.getElementById('button').setAttribute('style', 'background-color:grey');
+  }
 });
+
+socket.on('new game', () => {
+  dead = false;
+  document.getElementById('button').innerHTML = 'Start Game';
+});
+
+function button() {
+  if (dead) {
+    socket.emit('join');
+  } else if (canStart) {
+    socket.emit('start');
+  }
+}

@@ -1,6 +1,7 @@
 <html>
   <head>
     <title>Tag</title>
+    <link rel="icon" href="/static/icon.ico" >
     <style>
       canvas {
         display: block;
@@ -28,6 +29,16 @@
       	right: 0;
       	background-color: green;
       }
+      #button {
+        display: block;
+        margin: auto;
+        margin-top: 3vh;
+        width: 100px;
+        height: 50px;
+        font-weight: bold;
+        background-color: grey;
+        border-radius: 1vh;
+      }
     </style>
     <script src="/socket.io/socket.io.js"></script>
   </head>
@@ -35,6 +46,7 @@
     <div id="left"></div>
     <div id="right"></div>
     <canvas id="canvas"></canvas>
+    <button id="button" onclick="button();">Start Game</button>
   </body>
   <script src="/static/game.js"></script>
 </html>

@@ -25,6 +25,11 @@ interface ClientData {
     right: boolean,
 }
 
+interface Connection {
+    socket: Socket,
+    game: number
+}
+
 const width = 1000;
 const height = 500;
 
@@ -33,8 +38,8 @@ const playerYSpeed = 10;
 
 const gravity = 0.4;
 const initScore = 60;
-const powerUpTime = 10;
-const powerUpValue = 10;
+const powerUpTime = 25;
+const powerUpValue = 5;
 
 const playerSize = 30;
 const platformWidth = 300;
@@ -43,7 +48,34 @@ const powerUpSize = 20;
 
 const platforms = [];
 
-let sockets = [];
+let games: Game[] = [];
+let connections: Connection[] = [];
+
+function joinGame(socketId: string) {
+
+    if (games[connections[socketId].game] !== undefined && games[connections[socketId].game].players[socketId] !== undefined) {
+        games[connections[socketId].game].removePlayer(socketId);
+    }
+    let gameId  = -1;
+    let highestPlayerCount = 0;
+    for (let i in games) {
+        if (!games[i].running) {
+            if (games[i].playerCount > highestPlayerCount) {
+                gameId = games[i].id;
+                highestPlayerCount = games[i].playerCount;
+            }
+        }
+    }
+    if (gameId === -1) {
+        gameId = games.length;
+        games.push(new Game(games.length));
+        games[gameId].run();
+    }
+    connections[socketId].game = gameId;
+    games[gameId].addPlayer(socketId);
+    connections[socketId].socket.emit('new game');
+    connections[socketId].socket.join(String(gameId));
+}
 
 // Starts the server.
 server.listen(5000, function () {
@@ -52,33 +84,51 @@ server.listen(5000, function () {
 
 io.on('connection', function (socket: Socket) {
     socket.on('new player', function () {
-        sockets[socket.id] = game;
-        game.addPlayer(socket.id);
+        connections[socket.id] = {
+            socket: socket
+        };
+        joinGame(socket.id);
+        console.log('Player connected');
+    });
+
+    socket.on('start', function () {
+        games[connections[socket.id].game].startGame();
+    });
+
+    socket.on('join', function () {
+        socket.leave(String(connections[socket.id].game));
+        joinGame(socket.id);
     });
 
     socket.on('movement', function (data: ClientData) {
-        if (sockets[socket.id] !== undefined) {
-            sockets[socket.id].movePlayer(socket.id, data);
+        if (connections[socket.id] !== undefined) {
+            games[connections[socket.id].game].movePlayer(socket.id, data);
         }
     });
 
     socket.on('disconnect', function () {
-        if (sockets[socket.id] !== undefined) {
-            sockets[socket.id].removePlayer(socket.id);
+        if (connections[socket.id] !== undefined) {
+            games[connections[socket.id].game].removePlayer(socket.id);
+            console.log('Player Disconnected');
         }
     });
 });
 
 class Game {
 
-    private players = [];
+    public players = [];
     private powerUps = [];
+
+    public id: number;
+    public running: boolean;
     
-    private playerCount: number;
+    public playerCount: number;
     private lastScoreTime: number;
     private powerUpCounter: number;
 
-    constructor() {
+    constructor(id: number) {
+        this.id = id;
+        this.running = false;
         this.playerCount = 0;
         this.lastScoreTime = 0.0;
         this.powerUpCounter = powerUpTime;
@@ -86,18 +136,22 @@ class Game {
 
     addPlayer(id: string) {
         this.playerCount++;
-        this.players[id] = new Player(this.playerCount);
-        console.log('Player Added');
+        let highest = 0;
+        for (let id in this.players) {
+            if (this.players[id].num > highest) {
+                highest = this.players[id].num;
+            }
+        }
+        this.players[id] = new Player(highest + 1, id);
     }
 
     removePlayer(id: string) {
-        if (this.players[id].status) {
+        if (this.players[id] != undefined && this.players[id].status) {
             this.players[id].dead = true;
             this.updateTagger();
         }
         delete this.players[id];
         this.playerCount--;
-        console.log('Player Disconnected');
     }
 
     movePlayer(id: string, data: ClientData) {
@@ -113,7 +167,7 @@ class Game {
 
             game.update();
 
-            io.sockets.emit('state', game.getData());
+            io.to(String(this.id)).emit('state', game.getData());
         }, 1000 / 60, this);
 
     }
@@ -166,75 +220,89 @@ class Game {
             this.restart();
         }
     }
+    
+    startGame() {
+        this.running = true;
+        this.updateTagger();
+    }
 
     update() {
         for (let id in this.players) {
             this.players[id].update();
         }
 
-        for (let i in this.powerUps) {
-            this.powerUps[i].update();
-            if (this.powerUps[i].y >= height) {
-                this.powerUps.splice(Number(i), 1);
+        if (this.running) {
+            for (let i in this.powerUps) {
+                this.powerUps[i].update();
+                if (this.powerUps[i].y >= height) {
+                    this.powerUps.splice(Number(i), 1);
+                }
             }
-        }
-    
-        // Tag check
-        for (let firstId in this.players) {
-            for (let secondId in this.players) {
-                if (firstId != secondId) {
-                    let player1: Player = this.players[firstId];
-                    let player2: Player = this.players[secondId];
-    
-                    if (player1.dead || player2.dead) {
-                        continue;
+        
+            // Tag check
+            for (let firstId in this.players) {
+                for (let secondId in this.players) {
+                    if (firstId != secondId) {
+                        let player1: Player = this.players[firstId];
+                        let player2: Player = this.players[secondId];
+        
+                        if (player1.dead || player2.dead) {
+                            continue;
+                        }
+        
+                        player1.tag(player2);
                     }
+                }
+            }
     
-                    player1.tag(player2);
+            // Powerup check
+            for (let i in this.players) {
+                for (let j in this.powerUps) {
+                    if (!this.players[i].dead && this.players[i].collide(this.powerUps[j])) {
+                        this.players[i].score += powerUpValue;
+                        this.powerUps.splice(Number(j), 1);
+                    }
                 }
             }
-        }
-
-        // Powerup check
-        for (let i in this.players) {
-            for (let j in this.powerUps) {
-                if (this.players[i].collide(this.powerUps[j])) {
-                    this.players[i].score += powerUpValue;
-                    this.powerUps.splice(Number(j), 1);
+        
+            // Scoring
+            let currentTime = (new Date()).getTime();
+            let timeDifference = currentTime - this.lastScoreTime;
+            if (timeDifference >= 1000) {
+                for (let id in this.players) {
+                    let player = this.players[id];
+                    if (player.scoring(this.playerCount)) {
+                        this.updateTagger();
+                    }
                 }
-            }
-        }
+                
+                // Power ups
+                this.powerUpCounter--;
+                if (_.random(0, this.powerUpCounter) == 0) {
+                    this.powerUps.push(new PowerUp());
+                    this.powerUpCounter = powerUpTime;
+                }
     
-        // Scoring
-        let currentTime = (new Date()).getTime();
-        let timeDifference = currentTime - this.lastScoreTime;
-        if (timeDifference >= 1000) {
-            for (let id in this.players) {
-                let player = this.players[id];
-                if (player.scoring(this.playerCount)) {
-                    this.updateTagger();
-                }
+                this.lastScoreTime = currentTime;
             }
-            
-            // Power ups
-            this.powerUpCounter--;
-            if (_.random(0, this.powerUpCounter) == 0) {
-                this.powerUps.push(new PowerUp());
-                this.powerUpCounter = powerUpTime;
-            }
-
-            this.lastScoreTime = currentTime;
         }
     }
 
     restart() {
         setTimeout(() => {
-            for (let id2 in this.players) {
-                this.players[id2].dead = false;
-                this.players[id2].win = false;
-                this.players[id2].x = _.random(100, width - 100);
-                this.players[id2].y = height - playerSize;
-                this.players[id2].score = initScore
+            let playerIds = [];
+            for (let i in this.players) {
+                playerIds[i] = this.players[i].id;
+            }
+            this.running = false;
+            this.players = [];
+            this.playerCount = 0;
+            this.powerUps = [];
+            this.powerUpCounter = powerUpTime;
+
+            for (let id in playerIds) {
+                connections[id].socket.leave(String(this.id));
+                joinGame(id);
             }
         }, 3000);
     }
@@ -256,6 +324,8 @@ class Graphic {
 
 class Player extends Graphic {
 
+    public id;
+
     private xspeed: number;
     private yspeed: number;
     private num: number;
@@ -270,8 +340,9 @@ class Player extends Graphic {
     public win: boolean;
     private status: boolean;
 
-    constructor(num: number) {
+    constructor(num, id) {
         super();
+        this.id = id;
         this.x = _.random(100, 900),
         this.y = 500 - playerSize;
         this.xspeed = 0;
@@ -287,12 +358,7 @@ class Player extends Graphic {
         this.score = initScore;
         this.dead = false;
         this.win = false
-
-        if (this.num == 1) {
-            this.status = true;
-        } else {
-            this.status = false;
-        }
+        this.status = false;
     }
     
 
@@ -475,6 +541,3 @@ platforms.push(new Platform(600, 400, platformWidth, platformHeight));
 platforms.push(new Platform(350, 300, platformWidth, platformHeight));
 platforms.push(new Platform(100, 200, platformWidth, platformHeight));
 platforms.push(new Platform(600, 200, platformWidth, platformHeight));
-
-let game = new Game;
-game.run();
