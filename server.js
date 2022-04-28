@@ -33,7 +33,7 @@ app.get('/', function (request, response) {
 });
 // Starts the server.
 server.listen(port, function () {
-    console.log('Starting server on port 5000');
+    console.log('Starting server on port ' + port);
 });
 var width = 1000;
 var height = 500;
@@ -143,7 +143,7 @@ var Game = /** @class */ (function () {
         setInterval(function (game) {
             game.update();
             io.to(String(_this.id)).emit('state', game.getData());
-        }, 100, this);
+        }, 1000 / 60, this);
     };
     Game.prototype.getData = function () {
         var data = { playerData: {}, powerUpData: [], platformData: [] };

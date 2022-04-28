@@ -21,7 +21,7 @@ app.get('/', function (request, response) {
 
 // Starts the server.
 server.listen(port, function () {
-    console.log('Starting server on port 5000');
+    console.log('Starting server on port ' + port);
 });
 
 interface ClientData {
