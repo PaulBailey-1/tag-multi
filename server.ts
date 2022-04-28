@@ -10,12 +10,18 @@ let app = express();
 let server = http.Server(app);
 let io = socketIO(server);
 
-app.set('port', 5000);
+const port = process.env.PORT || 5000;
+app.set('port', port);
 app.use('/static', express.static(__dirname + '/static'));
 
 // Routing
 app.get('/', function (request, response) {
     response.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Starts the server.
+server.listen(port, function () {
+    console.log('Starting server on port 5000');
 });
 
 interface ClientData {
@@ -33,10 +39,11 @@ interface Connection {
 const width = 1000;
 const height = 500;
 
-const playerXSpeed = 8;
-const playerYSpeed = 10;
+const playerXSpeed = 400;
+const playerYSpeed = 500;
 
-const gravity = 0.4;
+const gravity = 1000;
+const powerUpGravity = 250;
 const initScore = 60;
 const powerUpTime = 25;
 const powerUpValue = 5;
@@ -76,11 +83,6 @@ function joinGame(socketId: string) {
     connections[socketId].socket.emit('new game');
     connections[socketId].socket.join(String(gameId));
 }
-
-// Starts the server.
-server.listen(5000, function () {
-    console.log('Starting server on port 5000');
-});
 
 io.on('connection', function (socket: Socket) {
     socket.on('new player', function () {
@@ -123,14 +125,16 @@ class Game {
     public running: boolean;
     
     public playerCount: number;
-    private lastScoreTime: number;
+    private lastTime: number;
+    private scoreTimer: number;
     private powerUpCounter: number;
 
     constructor(id: number) {
         this.id = id;
         this.running = false;
         this.playerCount = 0;
-        this.lastScoreTime = 0.0;
+        this.lastTime = 0.0;
+        this.scoreTimer = 0.0;
         this.powerUpCounter = powerUpTime;
     }
 
@@ -162,7 +166,7 @@ class Game {
     }
 
     run() {
-        this.lastScoreTime = (new Date()).getTime();
+        this.lastTime = (new Date()).getTime();
         setInterval((game: Game) => {
 
             game.update();
@@ -227,13 +231,17 @@ class Game {
     }
 
     update() {
+        let currentTime = (new Date()).getTime();
+        let elapsedTime = (currentTime - this.lastTime) / 1000;
+        this.lastTime = currentTime
+
         for (let id in this.players) {
-            this.players[id].update();
+            this.players[id].update(elapsedTime);
         }
 
         if (this.running) {
             for (let i in this.powerUps) {
-                this.powerUps[i].update();
+                this.powerUps[i].update(elapsedTime);
                 if (this.powerUps[i].y >= height) {
                     this.powerUps.splice(Number(i), 1);
                 }
@@ -266,9 +274,9 @@ class Game {
             }
         
             // Scoring
-            let currentTime = (new Date()).getTime();
-            let timeDifference = currentTime - this.lastScoreTime;
-            if (timeDifference >= 1000) {
+            this.scoreTimer += elapsedTime;
+            if (this.scoreTimer >= 1) {
+                this.scoreTimer = 0.0;
                 for (let id in this.players) {
                     let player = this.players[id];
                     if (player.scoring(this.playerCount)) {
@@ -282,8 +290,6 @@ class Game {
                     this.powerUps.push(new PowerUp());
                     this.powerUpCounter = powerUpTime;
                 }
-    
-                this.lastScoreTime = currentTime;
             }
         }
     }
@@ -328,6 +334,7 @@ class Player extends Graphic {
 
     private xspeed: number;
     private yspeed: number;
+    private yCorrection: number;
     private num: number;
     private score: number;
 
@@ -347,6 +354,7 @@ class Player extends Graphic {
         this.y = 500 - playerSize;
         this.xspeed = 0;
         this.yspeed = 0;
+        this.yCorrection = 0;
         this.width = playerSize;
         this.height = playerSize;
         this.num = num;
@@ -362,7 +370,7 @@ class Player extends Graphic {
     }
     
 
-    update() {
+    update(elapsedTime) {
 
         // Boundries
         if (this.y > 500 - this.height) {
@@ -391,11 +399,11 @@ class Player extends Graphic {
 
         // gravity
         if (!this.grounded) {
-            this.yspeed += gravity;
+            this.yspeed += gravity * elapsedTime;
         }
 
-        this.x += this.xspeed;
-        this.y += this.yspeed;
+        this.x += this.xspeed * elapsedTime;
+        this.y += this.yspeed * elapsedTime + this.yCorrection;
 
 
         // grounded
@@ -414,16 +422,28 @@ class Player extends Graphic {
             let top2 = platform.y;
             let bottom2 = platform.y + (platform.height);
 
-            if (((bottom1 < bottom2 + Math.abs(this.yspeed)) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
+            let expand = 0;
+            if (this.yspeed == Math.abs(this.yspeed) && !this.grounded) {
+                expand = Math.abs(this.yspeed / 10);
+                this.yCorrection = (top2 - bottom1) / (elapsedTime * 50);
+                if (Math.abs((top2 - bottom1)) < 2) {
+                    this.yCorrection = 0.0;
+                }
+            }
+
+            if (((bottom1 < bottom2 + expand) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
                 if (this.platformDown) {
                     this.yspeed = playerYSpeed;
                 } else {
-                    this.yspeed = top2 - bottom1;
+                    this.yspeed = 0.0;
                     this.grounded = true;
                     this.wallTimeout = false;
                 }
             }
         });
+        if (!this.grounded) {
+            this.yCorrection = 0.0;
+        }
     }
 
     move(data: ClientData) {
@@ -530,9 +550,9 @@ class PowerUp extends Graphic {
         this.yspeed = 0.0;
     }
 
-    update() {
-        this.yspeed += gravity / 3;
-        this.y += this.yspeed;
+    update(elapsedTime) {
+        this.yspeed += powerUpGravity * elapsedTime;
+        this.y += this.yspeed * elapsedTime;
     }
 }
 

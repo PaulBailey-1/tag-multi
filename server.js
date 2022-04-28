@@ -24,17 +24,23 @@ var _ = require('lodash');
 var app = express();
 var server = http.Server(app);
 var io = socketIO(server);
-app.set('port', 5000);
+var port = process.env.PORT || 5000;
+app.set('port', port);
 app.use('/static', express.static(__dirname + '/static'));
 // Routing
 app.get('/', function (request, response) {
     response.sendFile(path.join(__dirname, 'index.html'));
 });
+// Starts the server.
+server.listen(port, function () {
+    console.log('Starting server on port 5000');
+});
 var width = 1000;
 var height = 500;
-var playerXSpeed = 8;
-var playerYSpeed = 10;
-var gravity = 0.4;
+var playerXSpeed = 400;
+var playerYSpeed = 500;
+var gravity = 1000;
+var powerUpGravity = 250;
 var initScore = 60;
 var powerUpTime = 25;
 var powerUpValue = 5;
@@ -69,10 +75,6 @@ function joinGame(socketId) {
     connections[socketId].socket.emit('new game');
     connections[socketId].socket.join(String(gameId));
 }
-// Starts the server.
-server.listen(5000, function () {
-    console.log('Starting server on port 5000');
-});
 io.on('connection', function (socket) {
     socket.on('new player', function () {
         connections[socket.id] = {
@@ -107,7 +109,8 @@ var Game = /** @class */ (function () {
         this.id = id;
         this.running = false;
         this.playerCount = 0;
-        this.lastScoreTime = 0.0;
+        this.lastTime = 0.0;
+        this.scoreTimer = 0.0;
         this.powerUpCounter = powerUpTime;
     }
     Game.prototype.addPlayer = function (id) {
@@ -136,11 +139,11 @@ var Game = /** @class */ (function () {
     };
     Game.prototype.run = function () {
         var _this = this;
-        this.lastScoreTime = (new Date()).getTime();
+        this.lastTime = (new Date()).getTime();
         setInterval(function (game) {
             game.update();
             io.to(String(_this.id)).emit('state', game.getData());
-        }, 1000 / 60, this);
+        }, 100, this);
     };
     Game.prototype.getData = function () {
         var data = { playerData: {}, powerUpData: [], platformData: [] };
@@ -192,12 +195,15 @@ var Game = /** @class */ (function () {
         this.updateTagger();
     };
     Game.prototype.update = function () {
+        var currentTime = (new Date()).getTime();
+        var elapsedTime = (currentTime - this.lastTime) / 1000;
+        this.lastTime = currentTime;
         for (var id in this.players) {
-            this.players[id].update();
+            this.players[id].update(elapsedTime);
         }
         if (this.running) {
             for (var i in this.powerUps) {
-                this.powerUps[i].update();
+                this.powerUps[i].update(elapsedTime);
                 if (this.powerUps[i].y >= height) {
                     this.powerUps.splice(Number(i), 1);
                 }
@@ -225,9 +231,9 @@ var Game = /** @class */ (function () {
                 }
             }
             // Scoring
-            var currentTime = (new Date()).getTime();
-            var timeDifference = currentTime - this.lastScoreTime;
-            if (timeDifference >= 1000) {
+            this.scoreTimer += elapsedTime;
+            if (this.scoreTimer >= 1) {
+                this.scoreTimer = 0.0;
                 for (var id in this.players) {
                     var player = this.players[id];
                     if (player.scoring(this.playerCount)) {
@@ -240,7 +246,6 @@ var Game = /** @class */ (function () {
                     this.powerUps.push(new PowerUp());
                     this.powerUpCounter = powerUpTime;
                 }
-                this.lastScoreTime = currentTime;
             }
         }
     };
@@ -284,6 +289,7 @@ var Player = /** @class */ (function (_super) {
             _this.y = 500 - playerSize;
         _this.xspeed = 0;
         _this.yspeed = 0;
+        _this.yCorrection = 0;
         _this.width = playerSize;
         _this.height = playerSize;
         _this.num = num;
@@ -298,7 +304,7 @@ var Player = /** @class */ (function (_super) {
         _this.status = false;
         return _this;
     }
-    Player.prototype.update = function () {
+    Player.prototype.update = function (elapsedTime) {
         var _this = this;
         // Boundries
         if (this.y > 500 - this.height) {
@@ -325,10 +331,10 @@ var Player = /** @class */ (function (_super) {
         }
         // gravity
         if (!this.grounded) {
-            this.yspeed += gravity;
+            this.yspeed += gravity * elapsedTime;
         }
-        this.x += this.xspeed;
-        this.y += this.yspeed;
+        this.x += this.xspeed * elapsedTime;
+        this.y += this.yspeed * elapsedTime + this.yCorrection;
         // grounded
         this.grounded = false;
         if (this.y >= 500 - this.height) {
@@ -344,17 +350,28 @@ var Player = /** @class */ (function (_super) {
             var right2 = platform.x + (platform.width);
             var top2 = platform.y;
             var bottom2 = platform.y + (platform.height);
-            if (((bottom1 < bottom2 + Math.abs(_this.yspeed)) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
+            var expand = 0;
+            if (_this.yspeed == Math.abs(_this.yspeed) && !_this.grounded) {
+                expand = Math.abs(_this.yspeed / 10);
+                _this.yCorrection = (top2 - bottom1) / (elapsedTime * 50);
+                if (Math.abs((top2 - bottom1)) < 2) {
+                    _this.yCorrection = 0.0;
+                }
+            }
+            if (((bottom1 < bottom2 + expand) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
                 if (_this.platformDown) {
                     _this.yspeed = playerYSpeed;
                 }
                 else {
-                    _this.yspeed = top2 - bottom1;
+                    _this.yspeed = 0.0;
                     _this.grounded = true;
                     _this.wallTimeout = false;
                 }
             }
         });
+        if (!this.grounded) {
+            this.yCorrection = 0.0;
+        }
     };
     Player.prototype.move = function (data) {
         if (data.left && this.x > 0) {
@@ -458,9 +475,9 @@ var PowerUp = /** @class */ (function (_super) {
         _this.yspeed = 0.0;
         return _this;
     }
-    PowerUp.prototype.update = function () {
-        this.yspeed += gravity / 3;
-        this.y += this.yspeed;
+    PowerUp.prototype.update = function (elapsedTime) {
+        this.yspeed += powerUpGravity * elapsedTime;
+        this.y += this.yspeed * elapsedTime;
     };
     return PowerUp;
 }(Graphic));
