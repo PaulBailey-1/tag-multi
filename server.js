@@ -37,13 +37,14 @@ server.listen(port, function () {
 });
 var width = 1000;
 var height = 500;
-var playerXSpeed = 400;
-var playerYSpeed = 500;
+var playerxSpeed = 400;
+var playerySpeed = 500;
 var gravity = 1000;
 var powerUpGravity = 250;
 var initScore = 60;
 var powerUpTime = 25;
 var powerUpValue = 5;
+var clock = 100;
 var playerSize = 30;
 var platformWidth = 300;
 var platformHeight = 5;
@@ -143,7 +144,7 @@ var Game = /** @class */ (function () {
         setInterval(function (game) {
             game.update();
             io.to(String(_this.id)).emit('state', game.getData());
-        }, 1000 / 60, this);
+        }, clock, this);
     };
     Game.prototype.getData = function () {
         var data = { playerData: {}, powerUpData: [], platformData: [] };
@@ -287,8 +288,8 @@ var Player = /** @class */ (function (_super) {
         _this.id = id;
         _this.x = _.random(100, 900),
             _this.y = 500 - playerSize;
-        _this.xspeed = 0;
-        _this.yspeed = 0;
+        _this.xSpeed = 0;
+        _this.ySpeed = 0;
         _this.yCorrection = 0;
         _this.width = playerSize;
         _this.height = playerSize;
@@ -308,19 +309,19 @@ var Player = /** @class */ (function (_super) {
         var _this = this;
         // Boundries
         if (this.y > 500 - this.height) {
-            this.yspeed = 0;
+            this.ySpeed = 0;
             this.y = 500 - this.height;
         }
         if (this.y < 0) {
-            this.yspeed = 0;
+            this.ySpeed = 0;
             this.y = 0;
         }
         if (this.x > 1000 - this.width) {
-            this.xspeed = 0;
+            this.xSpeed = 0;
             this.x = 1000 - this.width;
         }
         if (this.x < 0) {
-            this.xspeed = 0;
+            this.xSpeed = 0;
             this.x = 0;
         }
         if ((this.x == 0 || this.x == 1000 - this.width) && !this.wallTimeout) {
@@ -331,10 +332,10 @@ var Player = /** @class */ (function (_super) {
         }
         // gravity
         if (!this.grounded) {
-            this.yspeed += gravity * elapsedTime;
+            this.ySpeed += gravity * elapsedTime;
         }
-        this.x += this.xspeed * elapsedTime;
-        this.y += this.yspeed * elapsedTime + this.yCorrection;
+        this.x += this.xSpeed * elapsedTime;
+        this.y += this.ySpeed * elapsedTime + this.yCorrection;
         // grounded
         this.grounded = false;
         if (this.y >= 500 - this.height) {
@@ -351,8 +352,8 @@ var Player = /** @class */ (function (_super) {
             var top2 = platform.y;
             var bottom2 = platform.y + (platform.height);
             var expand = 0;
-            if (_this.yspeed == Math.abs(_this.yspeed) && !_this.grounded) {
-                expand = Math.abs(_this.yspeed / 10);
+            if (_this.ySpeed == Math.abs(_this.ySpeed) && !_this.grounded) {
+                expand = Math.abs(_this.ySpeed / 10);
                 _this.yCorrection = (top2 - bottom1) / (elapsedTime * 50);
                 if (Math.abs((top2 - bottom1)) < 2) {
                     _this.yCorrection = 0.0;
@@ -360,10 +361,10 @@ var Player = /** @class */ (function (_super) {
             }
             if (((bottom1 < bottom2 + expand) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
                 if (_this.platformDown) {
-                    _this.yspeed = playerYSpeed;
+                    _this.ySpeed = playerySpeed;
                 }
                 else {
-                    _this.yspeed = 0.0;
+                    _this.ySpeed = 0.0;
                     _this.grounded = true;
                     _this.wallTimeout = false;
                 }
@@ -375,20 +376,20 @@ var Player = /** @class */ (function (_super) {
     };
     Player.prototype.move = function (data) {
         if (data.left && this.x > 0) {
-            this.xspeed = -playerXSpeed;
+            this.xSpeed = -playerxSpeed;
         }
         else {
-            this.xspeed = 0;
+            this.xSpeed = 0;
         }
         if (data.up && this.y > 0 && this.grounded) {
-            this.yspeed = -playerYSpeed;
+            this.ySpeed = -playerySpeed;
         }
         else if (data.up && this.y > 0 && this.wall) {
-            this.yspeed = -playerYSpeed;
+            this.ySpeed = -playerySpeed;
             this.wallTimeout = true;
         }
         if (data.right && this.x < 1000 - this.width) {
-            this.xspeed = playerXSpeed;
+            this.xSpeed = playerxSpeed;
         }
         if (data.down && this.y < 500 - this.height) {
             this.platformDown = true;
@@ -443,6 +444,8 @@ var Player = /** @class */ (function (_super) {
         return {
             x: this.x,
             y: this.y,
+            xSpeed: this.xSpeed,
+            ySpeed: this.ySpeed,
             color: color,
             num: this.num,
             score: this.score,
@@ -472,12 +475,12 @@ var PowerUp = /** @class */ (function (_super) {
         _this.y = -powerUpSize;
         _this.width = powerUpSize;
         _this.height = powerUpSize;
-        _this.yspeed = 0.0;
+        _this.ySpeed = 0.0;
         return _this;
     }
     PowerUp.prototype.update = function (elapsedTime) {
-        this.yspeed += powerUpGravity * elapsedTime;
-        this.y += this.yspeed * elapsedTime;
+        this.ySpeed += powerUpGravity * elapsedTime;
+        this.y += this.ySpeed * elapsedTime;
     };
     return PowerUp;
 }(Graphic));

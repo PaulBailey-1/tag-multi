@@ -39,14 +39,15 @@ interface Connection {
 const width = 1000;
 const height = 500;
 
-const playerXSpeed = 400;
-const playerYSpeed = 500;
+const playerxSpeed = 400;
+const playerySpeed = 500;
 
 const gravity = 1000;
 const powerUpGravity = 250;
 const initScore = 60;
 const powerUpTime = 25;
 const powerUpValue = 5;
+const clock = 100;
 
 const playerSize = 30;
 const platformWidth = 300;
@@ -172,7 +173,7 @@ class Game {
             game.update();
 
             io.to(String(this.id)).emit('state', game.getData());
-        }, 1000 / 60, this);
+        }, clock, this);
 
     }
 
@@ -332,8 +333,8 @@ class Player extends Graphic {
 
     public id;
 
-    private xspeed: number;
-    private yspeed: number;
+    private xSpeed: number;
+    private ySpeed: number;
     private yCorrection: number;
     private num: number;
     private score: number;
@@ -352,8 +353,8 @@ class Player extends Graphic {
         this.id = id;
         this.x = _.random(100, 900),
         this.y = 500 - playerSize;
-        this.xspeed = 0;
-        this.yspeed = 0;
+        this.xSpeed = 0;
+        this.ySpeed = 0;
         this.yCorrection = 0;
         this.width = playerSize;
         this.height = playerSize;
@@ -374,19 +375,19 @@ class Player extends Graphic {
 
         // Boundries
         if (this.y > 500 - this.height) {
-            this.yspeed = 0;
+            this.ySpeed = 0;
             this.y = 500 - this.height;
         }
         if (this.y < 0) {
-            this.yspeed = 0;
+            this.ySpeed = 0;
             this.y = 0;
         }
         if (this.x > 1000 - this.width) {
-            this.xspeed = 0;
+            this.xSpeed = 0;
             this.x = 1000 - this.width;
         }
         if (this.x < 0) {
-            this.xspeed = 0;
+            this.xSpeed = 0;
             this.x = 0;
         }
 
@@ -399,11 +400,11 @@ class Player extends Graphic {
 
         // gravity
         if (!this.grounded) {
-            this.yspeed += gravity * elapsedTime;
+            this.ySpeed += gravity * elapsedTime;
         }
 
-        this.x += this.xspeed * elapsedTime;
-        this.y += this.yspeed * elapsedTime + this.yCorrection;
+        this.x += this.xSpeed * elapsedTime;
+        this.y += this.ySpeed * elapsedTime + this.yCorrection;
 
 
         // grounded
@@ -423,8 +424,8 @@ class Player extends Graphic {
             let bottom2 = platform.y + (platform.height);
 
             let expand = 0;
-            if (this.yspeed == Math.abs(this.yspeed) && !this.grounded) {
-                expand = Math.abs(this.yspeed / 10);
+            if (this.ySpeed == Math.abs(this.ySpeed) && !this.grounded) {
+                expand = Math.abs(this.ySpeed / 10);
                 this.yCorrection = (top2 - bottom1) / (elapsedTime * 50);
                 if (Math.abs((top2 - bottom1)) < 2) {
                     this.yCorrection = 0.0;
@@ -433,9 +434,9 @@ class Player extends Graphic {
 
             if (((bottom1 < bottom2 + expand) && (bottom1 >= top2) && (right1 > left2) && (left1 < right2))) {
                 if (this.platformDown) {
-                    this.yspeed = playerYSpeed;
+                    this.ySpeed = playerySpeed;
                 } else {
-                    this.yspeed = 0.0;
+                    this.ySpeed = 0.0;
                     this.grounded = true;
                     this.wallTimeout = false;
                 }
@@ -448,18 +449,18 @@ class Player extends Graphic {
 
     move(data: ClientData) {
         if (data.left && this.x > 0) {
-            this.xspeed = -playerXSpeed;
+            this.xSpeed = -playerxSpeed;
         } else {
-            this.xspeed = 0;
+            this.xSpeed = 0;
         }
         if (data.up && this.y > 0 && this.grounded) {
-            this.yspeed = -playerYSpeed;
+            this.ySpeed = -playerySpeed;
         } else if (data.up && this.y > 0 && this.wall) {
-            this.yspeed = -playerYSpeed;
+            this.ySpeed = -playerySpeed;
             this.wallTimeout = true;
         }
         if (data.right && this.x < 1000 - this.width) {
-            this.xspeed = playerXSpeed;
+            this.xSpeed = playerxSpeed;
         }
         if (data.down && this.y < 500 - this.height) {
             this.platformDown = true;
@@ -517,6 +518,8 @@ class Player extends Graphic {
         return {
             x: this.x,
             y: this.y,
+            xSpeed: this.xSpeed,
+            ySpeed: this.ySpeed,
             color: color,
             num: this.num,
             score: this.score,
@@ -539,7 +542,7 @@ class Platform extends Graphic {
 
 class PowerUp extends Graphic {
 
-    private yspeed: number;
+    private ySpeed: number;
 
     constructor() {
         super();
@@ -547,12 +550,12 @@ class PowerUp extends Graphic {
         this.y = -powerUpSize;
         this.width = powerUpSize;
         this.height = powerUpSize;
-        this.yspeed = 0.0;
+        this.ySpeed = 0.0;
     }
 
     update(elapsedTime) {
-        this.yspeed += powerUpGravity * elapsedTime;
-        this.y += this.yspeed * elapsedTime;
+        this.ySpeed += powerUpGravity * elapsedTime;
+        this.y += this.ySpeed * elapsedTime;
     }
 }
 
